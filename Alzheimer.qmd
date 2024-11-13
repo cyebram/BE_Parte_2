@@ -441,7 +441,7 @@ fviz_cluster(km.3, data = sd.data, palette= "jco", ellipse.type = "euclid", star
 data_lda <- datos |> dplyr::select(-M_F)
 
 lda_tx <- lda(Group~.,data=data_lda)
-lda_coef <- data.frame(varnames=names(data_lda[, -1]), coef(lda_tx))
+lda_coef <- data.frame(varnames=rownames(coef(lda_tx)), coef(lda_tx))
 #lda_coef$valor <- gsub("<", "", datos_prev_num$valor)
 prediction_group <- lda_tx |> predict(data_lda)
 lda_acc <-  mean(prediction_group$class==unname(as_vector(data_lda$Group))) 

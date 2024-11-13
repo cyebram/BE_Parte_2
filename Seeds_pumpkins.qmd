@@ -1,0 +1,622 @@
+---
+title: "Pumpkins Seeds EDA"
+format: html
+editor: visual
+---
+
+```{r}
+#| code-fold: true
+#| label: load-packages
+#| warning: false
+#| message: false
+
+
+library(tidyverse)
+library(ggthemes)
+library(RColorBrewer)
+library(plotly)
+library(pheatmap)
+library(corrplot)
+library(plotrix)
+library(tastypie)
+
+library(gplots)
+library(ggmosaic)
+library(treemapify)
+library(ggridges)
+library(ggalluvial)
+library(scatterPlotMatrix)
+
+library(readxl)
+library(writexl)
+
+library(kableExtra)
+library(multcomp)
+library(agricolae)
+library(factoextra)
+library(FactoMineR)
+
+```
+
+# Cargamos el conjunto de datos
+
+```{r}
+#| code-fold: true
+
+datos <-  read_excel("./Data_input/Pumpkin_Seeds_Dataset.xlsx")
+datos$Class <- factor(datos$Class)
+
+glimpse(datos)
+
+```
+
+# Resumen estadístico
+
+```{r}
+#| code-fold: true
+
+summary(datos)
+
+```
+
+## Gráficas de densidad y t-test
+
+```{r}
+#| code-fold: true
+num_var <- datos |> dplyr::select(where(is.numeric)) |> names()
+
+
+for (hvar in num_var) {
+
+  grafica <- ggplot(datos)+
+      geom_density(aes(eval(as.name(hvar)), fill=Class, color=Class), alpha=0.4)+
+        labs(x=hvar)+
+        theme_bw()
+        print(grafica)
+        
+       prueba_t <-  t.test(eval(as.name(hvar))~ Class, data=datos, alternative="two.sided")
+       
+       print(hvar)
+       
+       print(prueba_t)
+        
+        }
+
+```
+
+Elaboramos una gráfica de densidad con mayor detalle:
+
+```{r}
+#| code-fold: true
+
+density_area <- ggplot(datos) +
+  geom_density(aes(Area, fill=Class, color=Class), alpha=0.5, linewidth=1) +
+  labs(
+    title = "Función de densidad Área",
+    x = "Área (pixels)", y = "Densidad",
+    fill = "Class", color="Class"
+  ) +
+  scale_fill_manual(values = c("deepskyblue", "gold", "deeppink"))+
+  scale_color_manual(values = c("deepskyblue", "gold", "deeppink"))+
+  theme_bw()+
+  theme(
+    #legend.position="top",
+    legend.position = c(.75, .75),
+    #legend.justification = c("right", "top"),
+    #legend.box.just = "right",
+    legend.title = element_text(size=13, face="bold"),
+    legend.text = element_text(size=13),
+    plot.title = element_text(size=15, face="bold"),
+    plot.subtitle = element_text(size=13),
+    axis.text.x=element_text(size=12),
+    axis.text.y=element_text(size=12),
+    axis.title.x = element_text(face="bold", size=13),
+    axis.title.y = element_text(face="bold", size=13)
+  )
+
+density_area
+
+#ggplotly(density_body_mass)
+
+```
+
+# Heatmap
+
+```{r}
+#| code-fold: true
+
+data_matrix <- datos |> dplyr::select(-Class) |> as.matrix()
+dm_dim <- dim(data_matrix)
+rownames(data_matrix) <- paste("ID", 1:dm_dim[1], sep="_")
+
+
+row_annot <- dplyr::select(datos, Class) |> as.data.frame()
+rownames(row_annot) <- paste("ID", 1:dm_dim[1], sep="_")
+
+
+mapa <- pheatmap(data_matrix, 
+         border_color = NA, 
+         scale = "column",
+         clustering_distance_rows = "euclidean", 
+         cutree_rows = 5,
+         treeheight_col=10,
+         clustering_distance_cols = "euclidean", 
+         clustering_method = "ward.D2", 
+         #color= hcl.colors(10, "Spectral"),
+         #breaks = c(-3, 0, 3, 6, 9, 12, 15),
+         drop_levels = TRUE,
+         show_colnames = T, 
+         show_rownames = F,
+         annotation_row = row_annot)
+         
+         #,
+         #annotation_colors = cond_color)
+
+mapa
+
+#ggsave("heatmap_1.jpg", mapa, scale=1, dpi = 320)
+```
+
+# Correlación
+
+```{r}
+#| code-fold: true
+
+corr_matrix <- cor(datos |> dplyr::select(-Class))
+corr_matrix
+
+
+corrplot(corr_matrix, method="color")
+```
+
+```{r}
+#| code-fold: true
+corr_test <- cor.mtest(datos |> dplyr::select(-Class))
+
+corrplot(corr_matrix, p.mat= corr_test$p, method = "color", pch.cex = 0.5)
+
+
+```
+
+# PCA
+
+## Preparación de datos
+
+Conservar observaciones completas de las variables numéricas.
+
+```{r}
+#| code-fold: true
+
+datos_numeric <- datos |> dplyr::select(-Class)
+
+```
+
+## Resultados
+
+::: panel-tabset
+### Eigenvalores y varianzas
+
+```{r}
+#| code-fold: true
+
+
+
+PC_total <- prcomp(datos_numeric, scale.=TRUE, center=TRUE)
+
+eig_total <- get_eigenvalue(PC_total)
+eig_tabla <- data.frame(PC=paste0("PC",1:dim(eig_total)[1]), 
+                        Eigenvalor=round(eig_total$eigenvalue,3), 
+                        Varianza=round(eig_total$variance.percent,2), 
+                        Var_acu=round(eig_total$cumulative.variance.percent,2))
+
+kable(eig_tabla, align = "c", col.names = c("Componente", "Eigenvalor", "% varianza", "% varianza acumulada")) %>% kable_styling(c("striped", "hover"), full_width = F)%>% scroll_box(width="100%", height="300px", fixed_thead = TRUE)
+```
+
+### Scree plot
+
+```{r}
+#| code-fold: true
+fviz_eig(PC_total, addlabels = TRUE)
+```
+
+### Coeficientes (Loadings)
+
+```{r}
+#| code-fold: true
+PC_coef <-data.frame(PC_total$rotation)
+kable(PC_coef, align = "c") %>% kable_styling(c("striped", "hover"), full_width = F)%>% scroll_box(width="100%", height="300px", fixed_thead = TRUE)
+```
+
+### Contribución variables
+
+```{r}
+#| code-fold: true
+fviz_pca_var(PC_total, col.var = "contrib", gradient.cols=c("#1627dc", "#ffb600", "#ff2e16"))
+```
+
+### Contribución PC1
+
+```{r}
+#| code-fold: true
+fviz_contrib(PC_total, "var", axes = 1)
+```
+
+### Contribución PC2
+
+```{r}
+#| code-fold: true
+fviz_contrib(PC_total, "var", axes = 2)
+```
+:::
+
+## Proyecciones
+
+::: panel-tabset
+### Biplot
+
+```{r}
+#| code-fold: true
+fviz_pca_biplot(PC_total,
+                geom.ind = "point",
+                fill.ind = datos$Class,
+                pointshape = 21 ,
+                pointsize = 2,
+                alpha.ind=0.6,
+                col.var = "black",
+                #palette= ,
+                label= "var",
+                repel = TRUE   
+  )
+```
+
+### Proyección
+
+```{r}
+#| code-fold: true
+proy_scores <- fviz_pca_ind(PC_total,
+             pointsize = 2,
+             habillage =datos$Class,
+             #addEllipses = TRUE,
+             label= "var",
+            repel = TRUE 
+  )
+
+ggplotly(proy_scores)
+```
+:::
+
+# Agrupamiento jerárquico
+
+Se estandarizan los datos por columnas.
+
+```{r}
+sd.data <- scale(datos_numeric)
+row.names(sd.data) <- paste("ID", 1:nrow(sd.data), sep="_")
+```
+
+## Distancia Euclidiana
+
+```{r}
+#| code-fold: true
+
+dist.eucl <- dist(sd.data)
+dist.eucl_matrix <- as.matrix(dist.eucl)
+#dist.eucl_plot <- fviz_dist(dist.eucl, lab_size = 6)
+#dist.eucl_plot
+
+```
+
+## Ward.D2
+
+```{r}
+#| code-fold: true
+#| warning: false
+
+euc_ward2_hc <- hclust(dist.eucl, method = "ward.D2")
+
+fviz_dend(euc_ward2_hc, k=3, cex=0.5, k_colors = "jco", rect=TRUE, rect_border= "jco", rect_fill = TRUE, labels_track_height=0.25)
+```
+
+Se proyecta en el subespacio generado por las dos primeras componentes principales:
+
+```{r}
+#| code-fold: true
+
+grp_euc_ward2 <- cutree(euc_ward2_hc, k=3)
+fviz_cluster(list(data= sd.data, cluster= grp_euc_ward2), geom="point",
+             palette = "jco", ellipse.type = "convex", show.clust.cent = FALSE, ggtheme = theme_bw())
+```
+
+:::
+
+# K-medias
+
+Se lleva a cabo el agrupamiento de K-medias con K=3.
+
+```{r}
+#| code-fold: true
+
+km.3 <- kmeans(sd.data, 3, nstart = 25)
+fviz_cluster(km.3, data = sd.data, palette= "jco", ellipse.type = "euclid", star.plot=TRUE, geom="point",  ggtheme=theme_bw())
+
+
+```
+
+# LDA
+
+```{r}
+#| code-fold: true
+
+data_lda <- datos
+
+lda_tx <- lda(Class~.,data=data_lda)
+lda_coef <- data.frame(varnames=rownames(coef(lda_tx)), coef(lda_tx))
+#lda_coef$valor <- gsub("<", "", datos_prev_num$valor)
+prediction_group <- lda_tx |> predict(data_lda)
+lda_acc <-  mean(prediction_group$class==unname(as_vector(data_lda$Class))) 
+lda_data <- cbind(data_lda, prediction_group$x, prediction_group$posterior, pred_group= prediction_group$class)
+
+```
+
+```{r}
+#| code-fold: true
+
+lda_data_graf <- lda_data
+lda_plot <- ggplot(lda_data_graf, aes(x=LD1, y=0))+
+    geom_jitter(aes(fill=Class), shape=21, color="black", size=2)+
+  #  scale_fill_manual(values = my_colors)+
+    theme_light()+
+  #geom_text(data=data.scores,aes(x=NMDS1,y=NMDS2,label=site),size=6,vjust=0) + 
+  #scale_fill_manual(values=c("Converted"="darkblue","Demented"="firebrick", "Nondemented" = "yellowgreen"))+
+  labs(x= "LD1", 
+       y= " ", fill=" ")+
+    #theme_bw()+
+    theme(
+      plot.title = element_text(size=14),
+      axis.text.x=element_text(size=14),
+      axis.text.y=element_text(size=14),
+      axis.title.x = element_text(face="bold", size=15),
+      axis.title.y = element_text(face="bold", size=15),
+      legend.text = element_text(size=15),
+      legend.background  = element_rect(colour = "transparent", fill = "transparent")
+    )
+
+ggplotly(lda_plot)
+
+#ggsave("LDA_Alzheimer.jpg", lda_plot, width = 190, height = 160, units="mm", scale=1, dpi=320)
+```
+
+# PCA (Subset)
+
+## Preparación de datos
+
+Se considera un subconjunto de variables: Area, Perimeter, Major_Axis_Length, Minor_Axis_Length, Solidity, Extent, Aspect_Ration, Compactness.
+
+```{r}
+#| code-fold: true
+
+datos_numeric <- datos |> dplyr::select(Area, Perimeter, Major_Axis_Length, Minor_Axis_Length, Solidity, Extent, Aspect_Ration, Compactness)
+
+```
+
+## Resultados
+
+::: panel-tabset
+### Eigenvalores y varianzas
+
+```{r}
+#| code-fold: true
+
+
+
+PC_total <- prcomp(datos_numeric, scale.=TRUE, center=TRUE)
+
+eig_total <- get_eigenvalue(PC_total)
+eig_tabla <- data.frame(PC=paste0("PC",1:dim(eig_total)[1]), 
+                        Eigenvalor=round(eig_total$eigenvalue,3), 
+                        Varianza=round(eig_total$variance.percent,2), 
+                        Var_acu=round(eig_total$cumulative.variance.percent,2))
+
+kable(eig_tabla, align = "c", col.names = c("Componente", "Eigenvalor", "% varianza", "% varianza acumulada")) %>% kable_styling(c("striped", "hover"), full_width = F)%>% scroll_box(width="100%", height="300px", fixed_thead = TRUE)
+```
+
+### Scree plot
+
+```{r}
+#| code-fold: true
+fviz_eig(PC_total, addlabels = TRUE)
+```
+
+### Coeficientes (Loadings)
+
+```{r}
+#| code-fold: true
+PC_coef <-data.frame(PC_total$rotation)
+kable(PC_coef, align = "c") %>% kable_styling(c("striped", "hover"), full_width = F)%>% scroll_box(width="100%", height="300px", fixed_thead = TRUE)
+```
+
+### Contribución variables
+
+```{r}
+#| code-fold: true
+fviz_pca_var(PC_total, col.var = "contrib", gradient.cols=c("#1627dc", "#ffb600", "#ff2e16"))
+```
+
+### Contribución PC1
+
+```{r}
+#| code-fold: true
+fviz_contrib(PC_total, "var", axes = 1)
+```
+
+### Contribución PC2
+
+```{r}
+#| code-fold: true
+fviz_contrib(PC_total, "var", axes = 2)
+```
+:::
+
+## Proyecciones
+
+::: panel-tabset
+### Biplot
+
+```{r}
+#| code-fold: true
+fviz_pca_biplot(PC_total,
+                geom.ind = "point",
+                fill.ind = datos$Class,
+                pointshape = 21 ,
+                pointsize = 2,
+                alpha.ind=0.6,
+                col.var = "black",
+                #palette= ,
+                label= "var",
+                repel = TRUE   
+  )
+```
+
+### Proyección
+
+```{r}
+#| code-fold: true
+proy_scores <- fviz_pca_ind(PC_total,
+             pointsize = 2,
+             habillage =datos$Class,
+             #addEllipses = TRUE,
+             label= "var",
+            repel = TRUE 
+  )
+
+ggplotly(proy_scores)
+```
+:::
+
+# LDA (Subset)
+
+```{r}
+#| code-fold: true
+
+data_lda <- datos |> dplyr::select(Area, Solidity, Extent, Roundness, Aspect_Ration, Compactness, Class)
+
+lda_tx <- lda(Class~.,data=data_lda)
+lda_coef <- data.frame(varnames=rownames(coef(lda_tx)), coef(lda_tx))
+#lda_coef$valor <- gsub("<", "", datos_prev_num$valor)
+prediction_group <- lda_tx |> predict(data_lda)
+lda_acc <-  mean(prediction_group$class==unname(as_vector(data_lda$Class))) 
+lda_data <- cbind(data_lda, prediction_group$x, prediction_group$posterior, pred_group= prediction_group$class)
+
+```
+
+```{r}
+#| code-fold: true
+
+lda_data_graf <- lda_data
+lda_plot <- ggplot(lda_data_graf, aes(x=LD1, y=0))+
+    geom_jitter(aes(fill=Class), shape=21, color="black", size=2)+
+  #  scale_fill_manual(values = my_colors)+
+    theme_light()+
+  #geom_text(data=data.scores,aes(x=NMDS1,y=NMDS2,label=site),size=6,vjust=0) + 
+  #scale_fill_manual(values=c("Converted"="darkblue","Demented"="firebrick", "Nondemented" = "yellowgreen"))+
+  labs(x= "LD1", 
+       y= "LD2", fill=" ")+
+    #theme_bw()+
+    theme(
+      plot.title = element_text(size=14),
+      axis.text.x=element_text(size=14),
+      axis.text.y=element_text(size=14),
+      axis.title.x = element_text(face="bold", size=15),
+      axis.title.y = element_text(face="bold", size=15),
+      legend.text = element_text(size=15),
+      legend.background  = element_rect(colour = "transparent", fill = "transparent")
+    )
+
+ggplotly(lda_plot)
+
+#ggsave("LDA_Alzheimer.jpg", lda_plot, width = 190, height = 160, units="mm", scale=1, dpi=320)
+```
+
+# Regresión logística: `Aspect_Ration`
+
+```{r}
+#| code-fold: true
+
+log_reg_1 <- glm(Class~ Aspect_Ration, data=datos, family = binomial)
+summary(log_reg_1)
+
+contrasts(datos$Class)
+```
+
+## Gráfica de la función de probabilidad
+
+```{r}
+
+f_prob <- function(x){
+  exp(coef(log_reg_1)[1]+coef(log_reg_1)[2]*x)/(1+exp(coef(log_reg_1)[1]+coef(log_reg_1)[2]*x))
+}
+
+ggplot()+
+  geom_function(fun=f_prob, color="firebrick", xlim=c(min(datos$Aspect_Ration), max(datos$Aspect_Ration)))+
+  theme_bw()
+
+
+```
+
+```{r}
+#| code-fold: true
+
+prediction_lg1 <- log_reg_1 |> predict(type="response")
+lda_data <- lda_data |> mutate(prob_lg1=unname(prediction_lg1), pred_group_lg1="Çerçevelik")
+lda_data <- lda_data |> mutate(pred_group_lg1=if_else(prob_lg1>0.5, "Ürgüp Sivrisi", pred_group_lg1))
+
+mean(lda_data$Class==lda_data$pred_group_lg1)
+
+
+```
+
+# Regresión logística múltiple
+
+```{r}
+#| code-fold: true
+
+log_reg_2 <- glm(Class~ ., data=datos, family = binomial)
+summary(log_reg_2)
+
+contrasts(datos$Class)
+```
+
+```{r}
+#| code-fold: true
+
+prediction_lg2 <- log_reg_2 |> predict(type="response")
+lda_data <- lda_data |> mutate(prob_lg2=unname(prediction_lg2), pred_group_lg2="Çerçevelik")
+lda_data <- lda_data |> mutate(pred_group_lg2=if_else(prob_lg2>0.5, "Ürgüp Sivrisi", pred_group_lg2))
+
+mean(lda_data$Class==lda_data$pred_group_lg2)
+
+
+```
+
+# Regresión logística múltiple 2
+
+```{r}
+#| code-fold: true
+
+log_reg_2 <- glm(Class~ Area+  Major_Axis_Length + Minor_Axis_Length  + Convex_Area +      Equiv_Diameter, data=datos, family = binomial)
+summary(log_reg_2)
+
+contrasts(datos$Class)
+```
+
+```{r}
+#| code-fold: true
+
+prediction_lg2 <- log_reg_2 |> predict(type="response")
+lda_data <- lda_data |> mutate(prob_lg2=unname(prediction_lg2), pred_group_lg2="Çerçevelik")
+lda_data <- lda_data |> mutate(pred_group_lg2=if_else(prob_lg2>0.5, "Ürgüp Sivrisi", pred_group_lg2))
+
+mean(lda_data$Class==lda_data$pred_group_lg2)
+
+
+```

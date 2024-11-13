@@ -1,0 +1,234 @@
+---
+title: "Weather Time Series"
+format: html
+editor: visual
+---
+
+```{r}
+#| code-fold: true
+#| label: load-packages
+#| warning: false
+#| message: false
+
+
+library(tidyverse)
+library(ggthemes)
+library(RColorBrewer)
+library(plotly)
+library(pheatmap)
+library(corrplot)
+library(plotrix)
+library(tastypie)
+
+library(gplots)
+library(ggmosaic)
+library(treemapify)
+library(ggridges)
+library(ggalluvial)
+library(scatterPlotMatrix)
+
+library(readxl)
+library(writexl)
+
+library(kableExtra)
+library(multcomp)
+library(agricolae)
+library(factoextra)
+library(FactoMineR)
+library(lubridate)
+
+
+# Time series packages
+library(rgl)
+library(zoo)
+library(xts)
+library(TSstudio)
+library(imputeTS)
+library(seasonal)
+library(forecast)
+library(mFilter)
+library(timetk)
+
+```
+
+# Cargamos el conjunto de datos
+
+```{r}
+#| code-fold: true
+
+datos <-  read_csv("./Data_input/cleaned_weather.csv")
+
+datos$date <- dmy_hm(datos$date)
+
+glimpse(datos)
+# datos$Group <- factor(datos$Group)
+# datos$M_F <- factor(datos$M_F)
+
+
+```
+
+# Gráficas series temporales
+
+```{r}
+#| code-fold: true
+
+num_var <- dplyr::select(datos, where(is.numeric)) |> names() 
+
+for (hvar in num_var) {
+grafica <- ggplot(datos)+
+      geom_line(aes(date, eval(as.name(hvar))), color='firebrick')+ 
+        labs(y=hvar)+
+        theme_bw()
+
+print(grafica)
+}
+
+
+
+```
+
+# Scatterplots Temperatura
+
+```{r}
+#| code-fold: true
+#| warning: false
+
+num_var <- datos |> dplyr::select(p, Tpot:Tlog) |> names()
+
+
+# Se elaboran todos los scatterplots posibles
+
+
+
+  for (val_y in num_var) {
+    
+  scatter <- ggplot(datos)+
+    geom_point(aes(x = T, y = eval(as.name(val_y))), color = "dodgerblue") +
+    geom_smooth(aes(x = T, y = eval(as.name(val_y))), method = "lm", color="red2") +
+    labs(x = "Temperatura", y = val_y) +
+    theme_bw()
+    
+  print(scatter)
+  
+}
+
+
+
+
+```
+
+# Temperatura
+
+# Temperatura promedio hora (serie temporal)
+
+```{r}
+#| code-fold: true
+
+datos <- datos |> mutate(date_h=floor_date(date, unit="hour"), date_day=date(date), Month=month(date, label=TRUE), Day= wday(date, label=TRUE, abbr=FALSE), Hour=hour(date), .before=1)
+
+
+Temp_hour <- datos |>  dplyr::group_by(date_h) |> summarise(Temp_prom=mean(T))
+
+ggplot(Temp_hour)+
+      geom_line(aes(date_h, Temp_prom), color='firebrick')+ 
+        theme_bw()
+
+
+
+```
+
+# Temperatura promedio día
+
+```{r}
+#| code-fold: true
+
+Temp_day <- datos |>  dplyr::group_by(date_day) |> summarise(Temp_prom=mean(T))
+
+ggplot(Temp_day)+
+      geom_line(aes(date_day, Temp_prom), color='firebrick')+ 
+        theme_bw()
+
+
+
+```
+
+# Distribución temperatura por mes
+
+```{r}
+#| code-fold: true
+
+ggplot(datos)+
+  geom_boxplot(aes(Month, T, color=Month), show.legend = FALSE)+
+  theme_bw()
+
+```
+
+# Temperatura promedio por hora
+
+```{r}
+#| code-fold: true
+
+Temp_h <- datos |> dplyr::group_by(Hour) |> summarise(Temp_prom=mean(T))
+
+ggplot(Temp_h)+
+  geom_line(aes(Hour, Temp_prom), color="firebrick")+
+  theme_bw()
+
+```
+
+# Descomposición función decompose
+
+```{r}
+#| code-fold: true
+
+
+Temp_series <- ts(Temp_day$Temp_prom, start = 2020, frequency = 7)
+
+Temp_dec <- decompose(Temp_series)
+
+autoplot(Temp_dec, color="dodgerblue3")+
+        labs(x="Fecha", y="Temperatura")+
+        theme_bw()+
+        theme(
+              plot.title = element_text(size=14),
+              axis.text.x=element_text(size=13),
+              axis.text.y=element_text(size=12),
+              axis.title.x = element_text(face="bold", size=14),
+              axis.title.y = element_text(face="bold", size=14),
+              strip.text = element_text(size = 13)
+                                      )
+```
+
+# Descomposición STL
+
+La *Seasonal Decomposition of Time Series by Loess* (STL), es una técnica utilizada para estimar la descomposición de una serie temporal en tres partes: tendencia, estacionalidad y residuo. Es decir, dada una serie de temporal $\{Y_t\}_{t=1}^T$, se expresa
+
+\begin{equation}
+Y_t=T_t+S_t+R_t
+\end{equation}
+
+Donde:
+
+-   $T_t$ es la componente de la tendencia, que captura el cambio a largo plazo en la serie.
+
+-   $S_t$ es la componente de estacionalidad, capturando los patrones recurrentes que se repiten a intervalos regulares. Por ejemplo, como en el caso de parámetros de calidad del agua; con datos mensuales, la estacionalidad puede capturar efectos que ocurren cada año en un mes específico.
+
+-   $R_t$ es el residuo, que captura el ruido o las irregularidades no explicadas por las componentes de tendencia y estacionalidad.
+
+```{r}
+#| code-fold: true
+
+Temp_dec_stl <- stl(Temp_series, s.window = 13)
+
+autoplot(Temp_dec_stl, color="dodgerblue3")+
+        labs(x="Fecha", y="Temperatura")+
+        theme_bw()+
+        theme(
+              plot.title = element_text(size=14),
+              axis.text.x=element_text(size=13),
+              axis.text.y=element_text(size=12),
+              axis.title.x = element_text(face="bold", size=14),
+              axis.title.y = element_text(face="bold", size=14),
+              strip.text = element_text(size = 13)
+                                      )
+```
